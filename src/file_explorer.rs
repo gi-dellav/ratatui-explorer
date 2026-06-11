@@ -63,6 +63,7 @@ pub struct FileExplorer {
     cwd: PathBuf,
     files: Vec<File>,
     show_hidden: bool,
+    only_dirs: bool,
     selected: usize,
     theme: Theme,
     #[educe(Debug(ignore), PartialEq(ignore), Hash(ignore))]
@@ -101,11 +102,12 @@ impl FileExplorer {
     /// ```
     pub fn new() -> Result<FileExplorer> {
         let cwd = std::env::current_dir()?;
-        let files = Self::get_files(&cwd, false, None, None)?;
+        let files = Self::get_files(&cwd, false, false, None, None)?;
         let file_explorer = Self {
             cwd,
             files,
             show_hidden: false,
+            only_dirs: false,
             selected: 0,
             theme: Theme::new(),
             filter: None,
@@ -246,6 +248,7 @@ impl FileExplorer {
                 self.files = Self::get_files(
                     &self.cwd,
                     self.show_hidden,
+                    self.only_dirs,
                     self.filter.as_ref(),
                     self.search_query.as_deref(),
                 )?;
@@ -277,6 +280,7 @@ impl FileExplorer {
         self.files = Self::get_files(
             &cwd,
             self.show_hidden,
+            self.only_dirs,
             self.filter.as_ref(),
             self.search_query.as_deref(),
         )?;
@@ -322,6 +326,7 @@ impl FileExplorer {
         self.files = Self::get_files(
             &cwd,
             self.show_hidden,
+            self.only_dirs,
             self.filter.as_ref(),
             self.search_query.as_deref(),
         )?;
@@ -369,6 +374,7 @@ impl FileExplorer {
         self.files = Self::get_files(
             &self.cwd,
             show_hidden,
+            self.only_dirs,
             self.filter.as_ref(),
             self.search_query.as_deref(),
         )?;
@@ -426,6 +432,7 @@ impl FileExplorer {
         self.files = Self::get_files(
             &self.cwd,
             self.show_hidden,
+            self.only_dirs,
             self.filter.as_ref(),
             self.search_query.as_deref(),
         )?;
@@ -458,6 +465,7 @@ impl FileExplorer {
         self.files = Self::get_files(
             &self.cwd,
             self.show_hidden,
+            self.only_dirs,
             None,
             self.search_query.as_deref(),
         )?;
@@ -609,6 +617,63 @@ impl FileExplorer {
         self.show_hidden
     }
 
+    /// Sets whether only directories should be shown in the file explorer.
+    ///
+    /// When set to `true`, regular files are filtered out and only directories
+    /// (including the parent directory `../`) are displayed.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the current working directory can not be listed.
+    ///
+    /// # Examples
+    ///
+    /// Suppose you have this tree file:
+    /// ```plaintext
+    /// /
+    /// ├── .git
+    /// └── Documents
+    ///     ├── passport.png
+    ///     └── resume.pdf
+    /// ```
+    /// ```no_run
+    /// # use ratatui_explorer::FileExplorerBuilder;
+    /// let mut file_explorer = FileExplorerBuilder::build_with_working_dir("/").unwrap();
+    /// assert_eq!(file_explorer.files().len(), 1); // Only /Documents is shown
+    ///
+    /// file_explorer.set_only_dirs(true).unwrap();
+    /// assert_eq!(file_explorer.files().len(), 1); // Only /Documents is shown (was already only dirs)
+    /// ```
+    #[inline]
+    pub fn set_only_dirs(&mut self, only_dirs: bool) -> Result<()> {
+        self.only_dirs = only_dirs;
+        self.files = Self::get_files(&self.cwd, self.show_hidden, only_dirs, self.filter.as_ref(), self.search_query.as_deref())?;
+        self.selected = 0;
+
+        Ok(())
+    }
+
+    /// Indicates whether only directories are currently shown in the file explorer.
+    ///
+    /// # Examples
+    ///
+    /// You can get the current value like this:
+    /// ```no_run
+    /// # use ratatui_explorer::FileExplorer;
+    /// let mut file_explorer = FileExplorer::new().unwrap();
+    ///
+    /// // By default, all files and directories are shown.
+    /// assert_eq!(file_explorer.only_dirs(), false);
+    ///
+    /// file_explorer.set_only_dirs(true);
+    /// assert_eq!(file_explorer.only_dirs(), true);
+    /// ```
+    #[inline]
+    #[must_use]
+    pub const fn only_dirs(&self) -> bool {
+        self.only_dirs
+    }
+
     /// Returns the a [`Vec`](https://doc.rust-lang.org/stable/std/vec/struct.Vec.html) of files and directories in the
     /// current working directory of the file explorer, plus the parent directory if it exist.
     ///
@@ -713,6 +778,7 @@ impl FileExplorer {
         self.files = Self::get_files(
             &self.cwd,
             self.show_hidden,
+            self.only_dirs,
             self.filter.as_ref(),
             self.search_query.as_deref(),
         )?;
@@ -755,6 +821,7 @@ impl FileExplorer {
     fn get_files(
         working_dir: &Path,
         show_hidden: bool,
+        only_dirs: bool,
         filter: Option<&Arc<Filter>>,
         search_query: Option<&str>,
     ) -> Result<Vec<File>> {
@@ -792,10 +859,17 @@ impl FileExplorer {
                 };
                 if !show_hidden && file.is_hidden {
                     None
-                } else if let Some(filter) = &filter {
-                    filter(file)
                 } else {
-                    Some(file)
+                    let file = if let Some(filter) = &filter {
+                        filter(file)?
+                    } else {
+                        file
+                    };
+                    if only_dirs && !file.is_dir {
+                        None
+                    } else {
+                        Some(file)
+                    }
                 }
             })
             .partition(|file| file.is_dir);
@@ -1019,6 +1093,74 @@ mod tests {
 
         explorer.remove_filter_map()?;
         assert_eq!(explorer.files().len(), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_only_dirs_hides_files() -> Result<()> {
+        let root = build_tmp_file_system()?;
+        let documents_path = root.path().join("Documents");
+
+        let mut explorer = FileExplorerBuilder::build_with_working_dir(documents_path)?;
+        assert_eq!(explorer.files().len(), 3); // ../, passport.png, resume.pdf
+
+        explorer.set_only_dirs(true)?;
+        assert_eq!(explorer.files().len(), 1); // only ../
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_only_dirs_via_builder() -> Result<()> {
+        let root = build_tmp_file_system()?;
+        let documents_path = root.path().join("Documents");
+
+        let explorer = FileExplorerBuilder::default()
+            .working_dir(documents_path)
+            .only_dirs(true)
+            .build()?;
+
+        assert_eq!(explorer.files().len(), 1); // only ../
+        assert!(explorer.only_dirs());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_only_dirs_can_be_toggled() -> Result<()> {
+        let root = build_tmp_file_system()?;
+        let documents_path = root.path().join("Documents");
+
+        let mut explorer = FileExplorerBuilder::build_with_working_dir(documents_path)?;
+        assert_eq!(explorer.files().len(), 3);
+
+        explorer.set_only_dirs(true)?;
+        assert_eq!(explorer.files().len(), 1);
+
+        explorer.set_only_dirs(false)?;
+        assert_eq!(explorer.files().len(), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_only_dirs_persists_across_navigation() -> Result<()> {
+        let root = build_tmp_file_system()?;
+
+        let mut explorer =
+            FileExplorerBuilder::build_with_working_dir(root.path())?;
+        explorer.set_only_dirs(true)?;
+        assert_eq!(explorer.files().len(), 2); // ../ and Documents/
+
+        // Enter Documents/
+        explorer.handle(Input::Down)?;
+        explorer.handle(Input::Right)?;
+        assert_eq!(explorer.files().len(), 1); // only ../ (no files shown)
+
+        // Go back to parent
+        explorer.handle(Input::Left)?;
+        assert_eq!(explorer.files().len(), 2); // ../ and Documents/
 
         Ok(())
     }

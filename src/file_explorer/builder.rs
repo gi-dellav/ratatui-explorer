@@ -12,6 +12,7 @@ pub struct FileExplorerBuilder {
     cwd: Option<PathBuf>,
     theme: Option<Theme>,
     show_hidden: bool,
+    only_dirs: bool,
     #[educe(Debug(ignore), PartialEq(ignore), Hash(ignore))]
     filter: Option<Arc<Filter>>,
     custom_selected: bool,
@@ -79,6 +80,27 @@ impl FileExplorerBuilder {
     /// Set whether to show hidden files in the `FileExplorer`. Defaults to `false`.
     pub fn show_hidden(mut self, show: bool) -> Self {
         self.show_hidden = show;
+        self
+    }
+
+    /// Set whether to show only directories in the `FileExplorer`. Defaults to `false`.
+    ///
+    /// When set to `true`, regular files are filtered out and only directories
+    /// (including the parent directory `../`) are displayed.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use ratatui_explorer::FileExplorerBuilder;
+    /// let file_explorer = FileExplorerBuilder::default()
+    ///     .only_dirs(true)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// /* Only directories are shown */
+    /// ```
+    pub fn only_dirs(mut self, only_dirs: bool) -> Self {
+        self.only_dirs = only_dirs;
         self
     }
 
@@ -154,6 +176,7 @@ impl FileExplorerBuilder {
     #[allow(clippy::unwrap_or_default)]
     pub fn build(self) -> Result<FileExplorer> {
         let show_hidden = self.show_hidden;
+        let only_dirs = self.only_dirs;
         let theme = self.theme.unwrap_or_else(Theme::new);
         let filter = self.filter;
 
@@ -161,6 +184,7 @@ impl FileExplorerBuilder {
             cwd: PathBuf::new(),
             files: Vec::new(),
             show_hidden,
+            only_dirs,
             selected: 0,
             theme,
             filter,
