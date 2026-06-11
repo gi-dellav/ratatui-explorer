@@ -18,6 +18,7 @@ impl From<&Event> for Input {
                 KeyCode::Char('j') | KeyCode::Down => Input::Down,
                 KeyCode::Char('k') | KeyCode::Up => Input::Up,
                 KeyCode::Left | KeyCode::Backspace => Input::Left,
+                KeyCode::Char('/') => Input::Search,
                 KeyCode::Char('h') => {
                     if key.modifiers.contains(KeyModifiers::CONTROL) {
                         Input::ToggleShowHidden

@@ -28,6 +28,8 @@ pub enum Input {
     Right,
     /// Toggle between showing hidden files or not.
     ToggleShowHidden,
+    /// Start or stop searching files by name.
+    Search,
     /// Do nothing (used for converting events from other libraries, like
     /// [crossterm](https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html),
     /// [termion](https://docs.rs/termion/latest/termion/event/enum.Event.html) and

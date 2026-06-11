@@ -9,6 +9,7 @@ impl From<&Event> for Input {
     fn from(value: &Event) -> Self {
         match value {
             Event::Key(key) => match key {
+                Key::Char('/') => Input::Search,
                 Key::Char('j') | Key::Down => Input::Down,
                 Key::Char('k') | Key::Up => Input::Up,
                 Key::Char('h') | Key::Left | Key::Backspace => Input::Left,

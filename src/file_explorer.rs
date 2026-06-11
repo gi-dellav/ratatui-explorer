@@ -67,6 +67,7 @@ pub struct FileExplorer {
     theme: Theme,
     #[educe(Debug(ignore), PartialEq(ignore), Hash(ignore))]
     filter: Option<Arc<Filter>>,
+    search_query: Option<String>,
 }
 
 impl FileExplorer {
@@ -100,7 +101,7 @@ impl FileExplorer {
     /// ```
     pub fn new() -> Result<FileExplorer> {
         let cwd = std::env::current_dir()?;
-        let files = Self::get_files(&cwd, false, None)?;
+        let files = Self::get_files(&cwd, false, None, None)?;
         let file_explorer = Self {
             cwd,
             files,
@@ -108,6 +109,7 @@ impl FileExplorer {
             selected: 0,
             theme: Theme::new(),
             filter: None,
+            search_query: None,
         };
 
         Ok(file_explorer)
@@ -235,6 +237,19 @@ impl FileExplorer {
                 }
             }
             Input::ToggleShowHidden => self.set_show_hidden(!self.show_hidden)?,
+            Input::Search => {
+                if self.search_query.is_some() {
+                    self.search_query = None;
+                } else {
+                    self.search_query = Some(String::new());
+                }
+                self.files = Self::get_files(
+                    &self.cwd,
+                    self.show_hidden,
+                    self.filter.as_ref(),
+                    self.search_query.as_deref(),
+                )?;
+            }
             Input::None => (),
         }
 
@@ -259,7 +274,12 @@ impl FileExplorer {
     #[inline]
     pub fn set_cwd<P: Into<PathBuf>>(&mut self, cwd: P) -> Result<()> {
         let cwd = cwd.into();
-        self.files = Self::get_files(&cwd, self.show_hidden, self.filter.as_ref())?;
+        self.files = Self::get_files(
+            &cwd,
+            self.show_hidden,
+            self.filter.as_ref(),
+            self.search_query.as_deref(),
+        )?;
 
         self.cwd = cwd;
         self.selected = 0;
@@ -299,7 +319,12 @@ impl FileExplorer {
             .map(|p| p.to_owned())
             .unwrap_or_else(|| working_file.clone());
 
-        self.files = Self::get_files(&cwd, self.show_hidden, self.filter.as_ref())?;
+        self.files = Self::get_files(
+            &cwd,
+            self.show_hidden,
+            self.filter.as_ref(),
+            self.search_query.as_deref(),
+        )?;
 
         let selected_path = working_file;
         let selected = self
@@ -341,7 +366,12 @@ impl FileExplorer {
     #[inline]
     pub fn set_show_hidden(&mut self, show_hidden: bool) -> Result<()> {
         self.show_hidden = show_hidden;
-        self.files = Self::get_files(&self.cwd, show_hidden, self.filter.as_ref())?;
+        self.files = Self::get_files(
+            &self.cwd,
+            show_hidden,
+            self.filter.as_ref(),
+            self.search_query.as_deref(),
+        )?;
         self.selected = 0;
 
         Ok(())
@@ -393,7 +423,12 @@ impl FileExplorer {
         f: impl Fn(File) -> Option<File> + Send + Sync + 'static,
     ) -> Result<()> {
         self.filter = Some(Arc::new(f));
-        self.files = Self::get_files(&self.cwd, self.show_hidden, self.filter.as_ref())?;
+        self.files = Self::get_files(
+            &self.cwd,
+            self.show_hidden,
+            self.filter.as_ref(),
+            self.search_query.as_deref(),
+        )?;
         self.selected = 0;
 
         Ok(())
@@ -420,7 +455,12 @@ impl FileExplorer {
     pub fn remove_filter_map(&mut self) -> Result<Option<Arc<Filter>>> {
         let filter = self.filter.take();
 
-        self.files = Self::get_files(&self.cwd, self.show_hidden, None)?;
+        self.files = Self::get_files(
+            &self.cwd,
+            self.show_hidden,
+            None,
+            self.search_query.as_deref(),
+        )?;
         self.selected = 0;
 
         Ok(filter)
@@ -646,6 +686,59 @@ impl FileExplorer {
         &self.theme
     }
 
+    /// Sets the search query to filter files by name.
+    ///
+    /// When set, only files whose name contains the query (case-insensitive)
+    /// will be shown. Pass `None` to clear the search.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the current working directory can not be listed.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use ratatui_explorer::FileExplorer;
+    /// let mut file_explorer = FileExplorer::new().unwrap();
+    ///
+    /// // Only show files containing "pass"
+    /// file_explorer.set_search_query(Some("pass".to_string())).unwrap();
+    ///
+    /// // Clear the search
+    /// file_explorer.set_search_query(None).unwrap();
+    /// ```
+    #[inline]
+    pub fn set_search_query(&mut self, query: Option<String>) -> Result<()> {
+        self.search_query = query;
+        self.files = Self::get_files(
+            &self.cwd,
+            self.show_hidden,
+            self.filter.as_ref(),
+            self.search_query.as_deref(),
+        )?;
+        self.selected = 0;
+        Ok(())
+    }
+
+    /// Returns the current search query, if any.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use ratatui_explorer::FileExplorer;
+    /// let mut file_explorer = FileExplorer::new().unwrap();
+    ///
+    /// assert_eq!(file_explorer.search_query(), None);
+    ///
+    /// file_explorer.set_search_query(Some("pass".to_string())).unwrap();
+    /// assert_eq!(file_explorer.search_query(), Some(&"pass".to_string()));
+    /// ```
+    #[inline]
+    #[must_use]
+    pub const fn search_query(&self) -> Option<&String> {
+        self.search_query.as_ref()
+    }
+
     #[allow(missing_docs)]
     #[inline]
     #[deprecated(
@@ -663,6 +756,7 @@ impl FileExplorer {
         working_dir: &Path,
         show_hidden: bool,
         filter: Option<&Arc<Filter>>,
+        search_query: Option<&str>,
     ) -> Result<Vec<File>> {
         let (mut dirs, mut none_dirs): (Vec<_>, Vec<_>) = std::fs::read_dir(working_dir)?
             .filter_map(|entry| {
@@ -709,7 +803,7 @@ impl FileExplorer {
         dirs.sort_unstable_by(|f1, f2| f1.name.cmp(&f2.name));
         none_dirs.sort_unstable_by(|f1, f2| f1.name.cmp(&f2.name));
 
-        let files = if let Some(parent) = working_dir.parent() {
+        let mut files = if let Some(parent) = working_dir.parent() {
             let mut files = Vec::with_capacity(1 + dirs.len() + none_dirs.len());
 
             let parent = File {
@@ -739,6 +833,16 @@ impl FileExplorer {
 
             files
         };
+
+        if let Some(query) = search_query
+            && !query.is_empty()
+        {
+            files.retain(|file| {
+                file.name
+                    .to_lowercase()
+                    .contains(&query.to_lowercase())
+            });
+        }
 
         Ok(files)
     }

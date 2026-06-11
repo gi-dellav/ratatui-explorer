@@ -15,6 +15,7 @@ pub struct FileExplorerBuilder {
     #[educe(Debug(ignore), PartialEq(ignore), Hash(ignore))]
     filter: Option<Arc<Filter>>,
     custom_selected: bool,
+    search_query: Option<String>,
 }
 
 impl FileExplorerBuilder {
@@ -119,6 +120,28 @@ impl FileExplorerBuilder {
         self
     }
 
+    /// Set the initial search query for filtering files by name.
+    ///
+    /// When set, only files whose name contains the query (case-insensitive)
+    /// will be shown. The search can be toggled on/off with the `/` key
+    /// (`Input::Search`).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use ratatui_explorer::FileExplorerBuilder;
+    /// let file_explorer = FileExplorerBuilder::default()
+    ///     .search_query("pass")
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// /* Only files containing "pass" are shown */
+    /// ```
+    pub fn search_query(mut self, query: impl Into<String>) -> Self {
+        self.search_query = Some(query.into());
+        self
+    }
+
     /// Build the `FileExplorer` instance based on the provided configuration.
     ///
     /// # Errors
@@ -141,6 +164,7 @@ impl FileExplorerBuilder {
             selected: 0,
             theme,
             filter,
+            search_query: self.search_query,
         };
 
         if self.custom_selected {
