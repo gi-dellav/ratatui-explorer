@@ -19,15 +19,23 @@ impl WidgetRef for Renderer<'_> {
     where
         Self: Sized,
     {
-        let mut state = ListState::default().with_selected(Some(self.0.selected_idx()));
+        let files = self.0.files();
+        let selected = if files.is_empty() {
+            None
+        } else {
+            Some(self.0.selected_idx())
+        };
+        let mut state = ListState::default().with_selected(selected);
 
-        let highlight_style = if self.0.current().is_dir {
+        let highlight_style = if files.is_empty() {
+            self.0.theme().highlight_item_style
+        } else if self.0.current().is_dir {
             self.0.theme().highlight_dir_style
         } else {
             self.0.theme().highlight_item_style
         };
 
-        let mut list = List::new(self.0.files().iter().map(|file| file.text(self.0.theme())))
+        let mut list = List::new(files.iter().map(|file| file.text(self.0.theme())))
             .style(self.0.theme().style)
             .highlight_spacing(self.0.theme().highlight_spacing.clone())
             .highlight_style(highlight_style)

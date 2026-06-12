@@ -207,22 +207,26 @@ impl FileExplorer {
 
         match input {
             Input::Up => {
-                self.selected = self.selected.wrapping_sub(1).min(self.files.len() - 1);
+                if !self.files.is_empty() {
+                    self.selected = self.selected.wrapping_sub(1).min(self.files.len() - 1);
+                }
             }
             Input::Down => {
-                self.selected = (self.selected + 1) % self.files.len();
+                if !self.files.is_empty() {
+                    self.selected = (self.selected + 1) % self.files.len();
+                }
             }
             Input::Home => {
                 self.selected = 0;
             }
             Input::End => {
-                self.selected = self.files.len() - 1;
+                self.selected = self.files.len().saturating_sub(1);
             }
             Input::PageUp => {
                 self.selected = self.selected.saturating_sub(SCROLL_COUNT);
             }
             Input::PageDown => {
-                self.selected = (self.selected + SCROLL_COUNT).min(self.files.len() - 1);
+                self.selected = (self.selected + SCROLL_COUNT).min(self.files.len().saturating_sub(1));
             }
             Input::Left => {
                 let parent = self.cwd.parent();
@@ -233,7 +237,9 @@ impl FileExplorer {
                 }
             }
             Input::Right => {
-                if self.files[self.selected].path.is_dir() {
+                if !self.files.is_empty()
+                    && self.files[self.selected].path.is_dir()
+                {
                     let path = self.files.swap_remove(self.selected).path;
                     self.set_cwd(path)?;
                 }
@@ -252,6 +258,7 @@ impl FileExplorer {
                     self.filter.as_ref(),
                     self.search_query.as_deref(),
                 )?;
+                self.clamp_selected();
             }
             Input::None => (),
         }
@@ -287,6 +294,7 @@ impl FileExplorer {
 
         self.cwd = cwd;
         self.selected = 0;
+        self.clamp_selected();
 
         Ok(())
     }
@@ -340,6 +348,7 @@ impl FileExplorer {
 
         self.cwd = cwd;
         self.selected = selected;
+        self.clamp_selected();
 
         Ok(())
     }
@@ -379,6 +388,7 @@ impl FileExplorer {
             self.search_query.as_deref(),
         )?;
         self.selected = 0;
+        self.clamp_selected();
 
         Ok(())
     }
@@ -437,6 +447,7 @@ impl FileExplorer {
             self.search_query.as_deref(),
         )?;
         self.selected = 0;
+        self.clamp_selected();
 
         Ok(())
     }
@@ -470,6 +481,7 @@ impl FileExplorer {
             self.search_query.as_deref(),
         )?;
         self.selected = 0;
+        self.clamp_selected();
 
         Ok(filter)
     }
@@ -783,6 +795,7 @@ impl FileExplorer {
             self.search_query.as_deref(),
         )?;
         self.selected = 0;
+        self.clamp_selected();
         Ok(())
     }
 
@@ -813,6 +826,12 @@ impl FileExplorer {
     )]
     pub fn with_theme(theme: Theme) -> Result<FileExplorer> {
         FileExplorerBuilder::build_with_theme(theme)
+    }
+
+    fn clamp_selected(&mut self) {
+        if !self.files.is_empty() {
+            self.selected = self.selected.min(self.files.len() - 1);
+        }
     }
 
     /// Get the files and directories in the current working directory and set them in the file explorer.
@@ -911,10 +930,13 @@ impl FileExplorer {
         if let Some(query) = search_query
             && !query.is_empty()
         {
+            let has_parent = working_dir.parent().is_some();
             files.retain(|file| {
-                file.name
-                    .to_lowercase()
-                    .contains(&query.to_lowercase())
+                has_parent && file.name == "../"
+                    || file
+                        .name
+                        .to_lowercase()
+                        .contains(&query.to_lowercase())
             });
         }
 
